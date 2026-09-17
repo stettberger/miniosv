@@ -930,6 +930,14 @@ private:
     //Linux dynamic linker
     int *_clear_id;
     robust_list_head *_robust_list_head;
+
+    std::atomic<uintptr_t> locks {0};
+public:
+    // A lock stack (in the future)
+    void push_lock(std::atomic<uint32_t> *lock);
+
+    // returns true if there the thread was not preempted.
+    bool pop_lock(std::atomic<uint32_t> *lock);
 };
 
 class thread_handle {

@@ -357,6 +357,23 @@ void cpu::reschedule_from_interrupt(bool called_from_yield,
     assert(n->_detached_state->st.load() == thread::status::queued);
     trace_sched_switch(n, p->_runtime.get_local(), n->_runtime.get_local());
 
+    // Manage preemption counters
+    if (p && p->locks) {
+        uintptr_t val = p->locks.fetch_and(~1);
+        std::atomic<uint32_t> * count = (std::atomic<uint32_t> *)(val & ~1);
+        auto old = count->fetch_add(1); // Increase an Preemption counter
+        // Currently it is limited to one lock held
+        assert (old == 0);
+    }
+    if (n->locks) {
+        uintptr_t val = n->locks.fetch_and(~1);
+        std::atomic<uint32_t> * count = (std::atomic<uint32_t> *)(val & ~1);
+        auto old = count->fetch_add(-1); // Decrease an preemption coounter
+        // Currently it is limited to one lock held
+        assert (old == 1);
+    }
+
+
     if (called_from_yield) {
         enqueue(*p);
     }
@@ -1283,6 +1300,47 @@ void thread::wake_with_irq_disabled()
     WITH_LOCK(rcu_read_lock) {
         wake_impl(_detached_state.get());
     }
+}
+
+void thread::push_lock(std::atomic<uint32_t> *counter) {
+    assert(!sched::preemptable());
+
+    assert (current() == this);
+    uintptr_t value = (uintptr_t) counter | 1;
+    this->locks.store(value);
+    return;
+
+
+    // WITH_LOCK(rcu_read_lock) {
+    //     auto status = this->get_status();
+    //     uintptr_t value = (uintptr_t) counter;
+    //     assert((value & 1) == 0);
+    //     if (false
+    //         // || increment
+    //         || status == sched::thread::status::waiting
+    //         || status == sched::thread::status::queued
+    //         ) {
+    //         uint32_t old = counter->fetch_add(1);
+    //         assert(old == 0);
+    //         value |= 1; // Mark that we have done the initial add
+    //         // printf("PUSH/+1/old: %d, %d\n", old, value & 1);
+    //     }
+
+    //     assert(this->locks.load() == 0);
+    //     this->locks.store(value);
+   //}
+}
+
+bool thread::pop_lock(std::atomic<uint32_t> *counter) {
+    uintptr_t old = this->locks.exchange(0);
+    assert (current() == this);
+
+    std::atomic<uint32_t> *old_ptr = (std::atomic<uint32_t>*)(old & ~1);
+    assert(old_ptr == counter);
+    return (old & 1);
+    // printf("old_ptr: %p, counter: %p\n", old_ptr, counter);
+    // }
+    // 
 }
 
 void thread::wake_lock(mutex* mtx, wait_record* wr)
