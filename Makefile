@@ -617,6 +617,7 @@ objects += arch/x64/hyperv-clock.o
 endif # x64
 
 objects += core/spinlock.o
+objects += core/inline-futex.o
 objects += core/lfmutex.o
 objects += core/rwlock.o
 objects += core/semaphore.o
